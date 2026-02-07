@@ -4,6 +4,7 @@ import admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 import { Bot } from 'grammy';
 import { routeMessage } from './router/router.js';
+import express from 'express';
 
 // Initialize Firebase Admin with ADC
 let db;
@@ -11,7 +12,7 @@ try {
     if (!admin.apps.length) {
         admin.initializeApp({
             credential: admin.credential.applicationDefault(),
-            projectId: 'openclaw-pilot' // ✅ Your project ID
+            projectId: 'openclaw-pilot'
         });
     }
     db = getFirestore();
@@ -39,7 +40,6 @@ async function saveMessage(chatId, userMessage, aiResponse, provider, model) {
         return docRef.id;
     } catch (error) {
         console.error('❌ Failed to save to Firestore:', error.message);
-        // Don't throw - let bot continue even if save fails
         return null;
     }
 }
@@ -80,7 +80,6 @@ bot.on('message', async (ctx) => {
     } catch (error) {
         console.error('❌ Error processing message:', error.message);
         
-        // Send error message to user
         try {
             await ctx.reply('Sorry, I encountered an error processing your message. Please try again.');
         } catch (replyError) {
@@ -89,5 +88,40 @@ bot.on('message', async (ctx) => {
     }
 });
 
-// Start bot
-bot.start();
+// ============================================
+// CLOUD RUN WEBHOOK MODE
+// ============================================
+
+const app = express();
+app.use(express.json());
+
+const PORT = process.env.PORT || 8080;
+const WEBHOOK_PATH = '/webhook';
+
+// Health check endpoint (required for Cloud Run)
+app.get('/', (req, res) => {
+    res.json({ 
+        status: 'ok', 
+        bot: 'Ced Agent',
+        mode: 'webhook',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Telegram webhook endpoint
+app.post(WEBHOOK_PATH, async (req, res) => {
+    try {
+        await bot.handleUpdate(req.body);
+        res.sendStatus(200);
+    } catch (error) {
+        console.error('❌ Webhook error:', error.message);
+        res.sendStatus(500);
+    }
+});
+
+// Start HTTP server
+app.listen(PORT, () => {
+    console.log(`🚀 Server listening on port ${PORT}`);
+    console.log(`📡 Webhook endpoint: ${WEBHOOK_PATH}`);
+    console.log('⚠️  Remember to set webhook URL after deployment');
+});
