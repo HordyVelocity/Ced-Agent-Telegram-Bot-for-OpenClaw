@@ -1,82 +1,93 @@
-// ======================================================
-// CedVelocityLeadsBot – CLEAN LIVE VERSION
-// Location: openclaw/ced-bot/index.js
-// ======================================================
-
+// openclaw/ced-bot/index.js
 import 'dotenv/config';
-import TelegramBot from 'node-telegram-bot-api';
-import Anthropic from '@anthropic-ai/sdk';
+import admin from 'firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
+import { Bot } from 'grammy';
+import { routeMessage } from './router/router.js';
 
-// ENV
-const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-
-if (!TELEGRAM_TOKEN) {
-  console.error('TELEGRAM_BOT_TOKEN missing');
-  process.exit(1);
+// Initialize Firebase Admin with ADC
+let db;
+try {
+    if (!admin.apps.length) {
+        admin.initializeApp({
+            credential: admin.credential.applicationDefault(),
+            projectId: 'openclaw-pilot' // ✅ Your project ID
+        });
+    }
+    db = getFirestore();
+    console.log('🔥 Firebase initialized');
+} catch (error) {
+    console.error('❌ Firebase initialization error:', error.message);
+    process.exit(1);
 }
 
-if (!ANTHROPIC_API_KEY) {
-  console.error('ANTHROPIC_API_KEY missing');
-  process.exit(1);
+// Save message to Firestore
+async function saveMessage(chatId, userMessage, aiResponse, provider, model) {
+    try {
+        const messageData = {
+            chatId: String(chatId),
+            userMessage: userMessage,
+            aiResponse: aiResponse,
+            provider: provider,
+            model: model,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            createdAt: new Date().toISOString()
+        };
+
+        const docRef = await db.collection('messages').add(messageData);
+        console.log('✅ Message saved to Firestore:', docRef.id);
+        return docRef.id;
+    } catch (error) {
+        console.error('❌ Failed to save to Firestore:', error.message);
+        // Don't throw - let bot continue even if save fails
+        return null;
+    }
 }
 
-console.log('Token loaded');
-console.log('Starting CedVelocityLeadsBot');
+// Initialize Telegram bot
+const bot = new Bot(process.env.TELEGRAM_TOKEN);
 
-// Claude client
-const anthropic = new Anthropic({
-  apiKey: ANTHROPIC_API_KEY,
+console.log('⚡ Ced bot with OpenClaw routing active');
+
+// Handle incoming messages
+bot.on('message', async (ctx) => {
+    const userMessage = ctx.message.text;
+    const userId = String(ctx.from.id);
+
+    try {
+        console.log('📨 Incoming:', userMessage);
+        
+        // Route message through OpenClaw
+        const result = await routeMessage(userMessage);
+        
+        if (!result || !result.text) {
+            throw new Error('Empty response from router');
+        }
+
+        // Send response to Telegram
+        await ctx.reply(result.text);
+        console.log('✅ Response sent to Telegram');
+
+        // Save to Firestore (non-blocking)
+        await saveMessage(
+            userId,
+            userMessage,
+            result.text,
+            result.provider || 'unknown',
+            result.model || 'unknown'
+        );
+
+    } catch (error) {
+        console.error('❌ Error processing message:', error.message);
+        
+        // Send error message to user
+        try {
+            await ctx.reply('Sorry, I encountered an error processing your message. Please try again.');
+        } catch (replyError) {
+            console.error('❌ Failed to send error message:', replyError.message);
+        }
+    }
 });
 
-// Telegram bot
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
-
-console.log('Ced is running and polling');
-
-// /start
-bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(
-    msg.chat.id,
-    'Hello. I am Ced. Ask me anything.'
-  );
-});
-
-// Messages
-bot.on('message', async (msg) => {
-  if (!msg.text || msg.text.startsWith('/')) return;
-
-  const chatId = msg.chat.id;
-  const text = msg.text.trim();
-
-  console.log('Message:', text);
-
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 600,
-      messages: [
-        { role: 'user', content: text }
-      ],
-    });
-
-    const reply = response.content[0].text;
-    await bot.sendMessage(chatId, reply);
-
-  } catch (err) {
-    console.error('Handler error:', err.message);
-    await bot.sendMessage(chatId, 'Error processing request.');
-  }
-});
-
-// Polling errors
-bot.on('polling_error', (err) => {
-  console.error('Polling error:', err.message);
-});
-
-// Shutdown
-process.on('SIGINT', () => {
-  bot.stopPolling();
-  process.exit(0);
-});
-
+// Start bot
+bot.start();
