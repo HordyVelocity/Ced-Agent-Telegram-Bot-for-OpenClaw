@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { LLM_CONFIG } from '../../config/llm-config.js';
 import { SkillInjector } from '../skillInjector.js';
 import { CED_BASE_PERSONA } from '../personas/ced-base.js';
-import { CED_FULL_PERSONA } from '../personas/ced-full.js';
+// REMOVED: import { CED_FULL_PERSONA } from '../personas/ced-full.js'; ← Broken file
 import { VisionCapability } from '../capabilities/vision.js';
 import { AudioCapability } from '../capabilities/audio.js';
 import { VideoCapability } from '../capabilities/video.js';
@@ -11,7 +11,7 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
 });
 
-// FIXED: Using CED_BASE_PERSONA (CED_FULL has syntax issues)
+// Using CED_BASE_PERSONA (stable, working version)
 const ACTIVE_PERSONA = CED_BASE_PERSONA;
 
 export async function callAnthropic(message, options = {}) {
