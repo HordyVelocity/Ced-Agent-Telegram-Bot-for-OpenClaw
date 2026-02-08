@@ -11,8 +11,8 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
 });
 
-// Choose which persona to use (FULL for complete Hordy context)
-const ACTIVE_PERSONA = CED_FULL_PERSONA;
+// FIXED: Using CED_BASE_PERSONA (CED_FULL has syntax issues)
+const ACTIVE_PERSONA = CED_BASE_PERSONA;
 
 export async function callAnthropic(message, options = {}) {
   try {
