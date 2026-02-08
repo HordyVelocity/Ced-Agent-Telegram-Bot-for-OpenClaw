@@ -100,28 +100,38 @@ const WEBHOOK_PATH = '/webhook';
 
 // Health check endpoint (required for Cloud Run)
 app.get('/', (req, res) => {
-    res.json({ 
-        status: 'ok', 
-        bot: 'Ced Agent',
-        mode: 'webhook',
-        timestamp: new Date().toISOString()
-    });
+    res.status(200).send({ status: 'ok', message: 'Ced Bot is running' });
 });
 
-// Telegram webhook endpoint
+// Initialize bot for webhook mode
+(async () => {
+    try {
+        // Initialize the bot
+        await bot.api.setMyCommands([]);
+        console.log('🤖 Bot initialized for webhook mode');
+    } catch (error) {
+        console.error('❌ Bot initialization failed:', error.message);
+    }
+})();
+
+// Webhook endpoint for Telegram
 app.post(WEBHOOK_PATH, async (req, res) => {
     try {
-        await bot.handleUpdate(req.body);
-        res.sendStatus(200);
+        const update = req.body;
+        console.log('📨 Webhook received:', JSON.stringify(update).substring(0, 100));
+        
+        // Handle the update using grammY
+        await bot.handleUpdate(update);
+        
+        res.status(200).send({ ok: true });
     } catch (error) {
         console.error('❌ Webhook error:', error.message);
-        res.sendStatus(500);
+        res.status(500).send({ ok: false, error: error.message });
     }
 });
 
-// Start HTTP server
+// Start the server
 app.listen(PORT, () => {
-    console.log(`🚀 Server listening on port ${PORT}`);
-    console.log(`📡 Webhook endpoint: ${WEBHOOK_PATH}`);
-    console.log('⚠️  Remember to set webhook URL after deployment');
+    console.log(`🚀 Ced Bot server running on port ${PORT}`);
+    console.log(`📍 Webhook endpoint: ${WEBHOOK_PATH}`);
 });
