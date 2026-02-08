@@ -2,14 +2,13 @@ import { classifyTask } from './classify.js';
 import { callAnthropic } from './providers/anthropic.js';
 import { callOpenAI } from './providers/openai.js';
 
-// ✅ Line 5 removed - the non-existent import is gone to fix MODULE_NOT_FOUND
-
 export async function routeMessage(message, options = {}) {
     const { saveToDb = false, userId = 'test-user' } = options;
     const startTime = Date.now();
     
     console.log('\n🚀 ===== ROUTING MESSAGE =====');
     console.log(`📨 Message: ${message}`);
+    console.log(`🎬 Options:`, options);
 
     try {
         const classification = classifyTask(message);
@@ -18,22 +17,21 @@ export async function routeMessage(message, options = {}) {
 
         let response;
         if (classification.provider === 'anthropic') {
-            console.log('🟣 Calling Anthropic');
-            response = await callAnthropic(message);
+            console.log('🟣 Calling Anthropic with options');
+            response = await callAnthropic(message, options);
         } else {
-            console.log('🔵 Calling OpenAI');
-            response = await callOpenAI(message);
+            console.log('🔵 Calling OpenAI with options');
+            response = await callOpenAI(message, options);
         }
 
-        // THE VITAL DATA BRIDGE
         if (!response || !response.text) {
             throw new Error('Provider returned no text');
         }
 
         return {
             success: true,
-            text: response.text,     // Required for the Bot to "read" the message
-            content: response.text,  // Backup
+            text: response.text,
+            content: response.text,
             provider: classification.provider,
             model: response.model,
             classification: classification.type,
