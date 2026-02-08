@@ -51,24 +51,62 @@ console.log('⚡ Ced bot with OpenClaw routing active');
 
 // Handle incoming messages
 bot.on('message', async (ctx) => {
-    const userMessage = ctx.message.text;
     const userId = String(ctx.from.id);
+    
+    // ========================================
+    // NEW: Media handling (images/audio/video)
+    // ========================================
+    if (!ctx.message.text) {
+        let userMessage = '';
+        let options = {};
+        
+        if (ctx.message.photo) {
+            userMessage = ctx.message.caption || 'Analyze this image';
+            options = { hasImage: true, imageContext: 'Telegram image' };
+            console.log('📸 Image received');
+        } else if (ctx.message.voice || ctx.message.audio) {
+            userMessage = ctx.message.caption || 'Transcribe this audio';
+            options = { hasAudio: true, audioContext: 'Telegram audio' };
+            console.log('🎤 Audio received');
+        } else if (ctx.message.video) {
+            userMessage = ctx.message.caption || 'Analyze this video';
+            options = { hasVideo: true, videoContext: 'Telegram video' };
+            console.log('🎥 Video received');
+        } else {
+            await ctx.reply('I can handle text, images, audio, and video.');
+            return;
+        }
+        
+        try {
+            const result = await routeMessage(userMessage, options);
+            if (!result || !result.text) throw new Error('Empty response');
+            await ctx.reply(result.text);
+            await saveMessage(userId, userMessage, result.text, result.provider || 'unknown', result.model || 'unknown');
+            return;
+        } catch (error) {
+            console.error('❌ Media error:', error.message);
+            await ctx.reply('Sorry, error processing media. Please try again.');
+            return;
+        }
+    }
+    
+    // ========================================
+    // EXISTING: Text handling (UNCHANGED)
+    // ========================================
+    const userMessage = ctx.message.text;
 
     try {
         console.log('📨 Incoming:', userMessage);
         
-        // Route message through OpenClaw
         const result = await routeMessage(userMessage);
         
         if (!result || !result.text) {
             throw new Error('Empty response from router');
         }
 
-        // Send response to Telegram
         await ctx.reply(result.text);
         console.log('✅ Response sent to Telegram');
 
-        // Save to Firestore (non-blocking)
         await saveMessage(
             userId,
             userMessage,
@@ -126,8 +164,8 @@ async function startBot() {
         await bot.init();
         console.log('🤖 Bot initialized successfully');
         
-        // Start server AFTER bot is ready
-        app.listen(PORT, () => {
+        // Start server AFTER bot is ready - FIXED: Added 0.0.0.0 host binding
+        app.listen(PORT, '0.0.0.0', () => {
             console.log(`🚀 Ced Bot server running on port ${PORT}`);
             console.log(`📍 Webhook endpoint: ${WEBHOOK_PATH}`);
         });
