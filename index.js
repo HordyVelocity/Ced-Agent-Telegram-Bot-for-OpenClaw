@@ -103,17 +103,6 @@ app.get('/', (req, res) => {
     res.status(200).send({ status: 'ok', message: 'Ced Bot is running' });
 });
 
-// Initialize bot for webhook mode
-(async () => {
-    try {
-        // Initialize the bot
-        await bot.api.setMyCommands([]);
-        console.log('🤖 Bot initialized for webhook mode');
-    } catch (error) {
-        console.error('❌ Bot initialization failed:', error.message);
-    }
-})();
-
 // Webhook endpoint for Telegram
 app.post(WEBHOOK_PATH, async (req, res) => {
     try {
@@ -130,8 +119,23 @@ app.post(WEBHOOK_PATH, async (req, res) => {
     }
 });
 
-// Start the server
-app.listen(PORT, () => {
-    console.log(`🚀 Ced Bot server running on port ${PORT}`);
-    console.log(`📍 Webhook endpoint: ${WEBHOOK_PATH}`);
-});
+// Initialize bot and start server
+async function startBot() {
+    try {
+        // Initialize the bot FIRST
+        await bot.init();
+        console.log('🤖 Bot initialized successfully');
+        
+        // Start server AFTER bot is ready
+        app.listen(PORT, () => {
+            console.log(`🚀 Ced Bot server running on port ${PORT}`);
+            console.log(`📍 Webhook endpoint: ${WEBHOOK_PATH}`);
+        });
+    } catch (error) {
+        console.error('❌ Bot initialization failed:', error.message);
+        process.exit(1);
+    }
+}
+
+// Start everything
+startBot();
