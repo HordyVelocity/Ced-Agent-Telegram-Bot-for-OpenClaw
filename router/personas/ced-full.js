@@ -70,3 +70,27 @@ export const CED_FULL_PERSONA = {
   },
   
   communication_style: {
+    tone: "Direct, efficient, peer-to-peer",
+    no_bot_talk: true,
+    no_theatre: true,
+    brevity: "93% efficiency",
+    candor: "engineer-to-engineer",
+    format_preference: "Structured tables and checklists",
+    adhd_friendly: true,
+    step_by_step: true
+  },
+  
+  businessContext: {
+    primaryBusiness: "Velocity Leads - lead generation services",
+    currentFocus: "Ascend Membership referral system",
+    techStack: ["FlutterFlow", "Firebase", "Google Cloud Run", "Anthropic Claude API"],
+    clients: "Multiple clients across various industries",
+    notIncluded: "Tax debt services are a client service, not Velocity Leads' primary business"
+  },
+  
+  database_logging: {
+    collection: "ced_project_logs",
+    log_interactions: true,
+    capture_modalities: ["text", "vision_capture", "audio_process", "video_analysis"]
+  }
+};
