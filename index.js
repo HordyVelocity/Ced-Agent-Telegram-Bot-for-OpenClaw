@@ -2,6 +2,7 @@ import { Telegraf } from 'telegraf';
 import { config } from 'dotenv';
 import { routeMessage } from './router/router.js';
 import https from 'https';
+import express from 'express';
 
 config();
 
@@ -27,26 +28,27 @@ async function downloadFile(fileId) {
   }
 }
 
-// Message handler with multimodal support (IMAGES + AUDIO + VIDEO ready)
+// Main message handler
 bot.on('message', async (ctx) => {
   try {
     const message = ctx.message;
     const options = {};
     const userText = message.caption || message.text || '';
 
-    // === IMAGES (WORKING PERFECTLY) ===
+    // Images
     if (message.photo && message.photo.length > 0) {
       console.log('📸 Image received');
-      const photo = message.photo[message.photo.length - 1]; // highest res
+      const photo = message.photo[message.photo.length - 1]; // highest resolution
       const imageBuffer = await downloadFile(photo.file_id);
       const base64Image = imageBuffer.toString('base64');
       
       options.hasImage = true;
       options.imageData = base64Image;
       options.imageMediaType = 'image/jpeg';
+      console.log(`Image prepared (${imageBuffer.length} bytes)`);
     }
 
-    // === VOICE / AUDIO (framework ready) ===
+    // Voice / Audio
     if (message.voice || message.audio) {
       console.log('🎤 Audio received');
       const audio = message.voice || message.audio;
@@ -56,9 +58,10 @@ bot.on('message', async (ctx) => {
       options.hasAudio = true;
       options.audioData = base64Audio;
       options.audioMediaType = message.voice ? 'audio/ogg' : 'audio/mpeg';
+      console.log(`Audio prepared (${audioBuffer.length} bytes)`);
     }
 
-    // === VIDEO (framework ready) ===
+    // Video
     if (message.video) {
       console.log('🎬 Video received');
       const videoBuffer = await downloadFile(message.video.file_id);
@@ -67,64 +70,87 @@ bot.on('message', async (ctx) => {
       options.hasVideo = true;
       options.videoData = base64Video;
       options.videoMediaType = 'video/mp4';
+      console.log(`Video prepared (${videoBuffer.length} bytes)`);
     }
 
-    // === DOCUMENTS (non-PDF only – safe) ===
+    // Documents (only non-PDF for now – safe)
     if (message.document && message.document.mime_type !== 'application/pdf') {
-      console.log('📎 Non-PDF document received');
+      console.log('📎 Document received (non-PDF)');
       const docBuffer = await downloadFile(message.document.file_id);
       options.hasDocument = true;
       options.documentData = docBuffer.toString('base64');
       options.documentType = message.document.mime_type;
+      console.log(`Document prepared (${docBuffer.length} bytes)`);
     }
 
+    // Route to your logic
+    console.log('Routing message with options:', {
+      hasImage: !!options.hasImage,
+      hasAudio: !!options.hasAudio,
+      hasVideo: !!options.hasVideo,
+      hasDocument: !!options.hasDocument
+    });
+
     const response = await routeMessage(userText, options);
-    await ctx.reply(response.text);
+    await ctx.reply(response.text || 'Got it!');
 
   } catch (error) {
-    console.error('❌ Message handling error:', error.message);
+    console.error('❌ Message handler error:', error.message);
     try {
-      await ctx.reply('Something went wrong – try again in a sec!');
-    } catch {}
+      await ctx.reply('Sorry, something went wrong on my side. Try again?');
+    } catch (replyErr) {
+      console.error('Could not send error reply:', replyErr.message);
+    }
   }
 });
 
-// =============== EXPRESS WEBHOOK SERVER ===============
-import express from 'express';
+// ────────────────────────────────────────────────
+//           EXPRESS + WEBHOOK for Cloud Run
+// ────────────────────────────────────────────────
+
 const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
+const WEBHOOK_PATH = '/webhook';
 
-// Health check
+// Health check endpoint (Cloud Run requires this)
 app.get('/', (req, res) => {
-  res.status(200).send({ status: 'ok', message: 'Ced Bot is alive and crushing it' });
+  res.status(200).json({
+    status: 'ok',
+    message: 'Ced Bot is running',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Telegram webhook
-app.post('/webhook', async (req, res) => {
+// Telegram webhook endpoint
+app.post(WEBHOOK_PATH, async (req, res) => {
   try {
+    console.log('Webhook received:', JSON.stringify(req.body, null, 2).slice(0, 200) + '...');
     await bot.handleUpdate(req.body);
-    res.status(200).send({ ok: true });
+    res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('Webhook error:', error);
-    res.status(500).send({ error: error.message });
+    console.error('Webhook error:', error.message);
+    res.status(500).json({ ok: false, error: error.message });
   }
 });
 
-// Start everything
+// Start the bot + server
 async function startBot() {
   try {
     await bot.init();
-    console.log('🤖 Telegraf bot initialized');
-    
+    console.log('🤖 Telegraf bot initialized successfully');
+
     app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Ced Bot server LIVE on port ${PORT}`);
+      console.log(`🚀 Server listening on port ${PORT}`);
+      console.log(`Webhook path: ${WEBHOOK_PATH}`);
+      console.log(`Health check: http://0.0.0.0:${PORT}/`);
     });
   } catch (error) {
-    console.error('❌ Failed to start bot:', error);
+    console.error('❌ Failed to start bot:', error.message);
     process.exit(1);
   }
 }
 
+// Launch everything
 startBot();
