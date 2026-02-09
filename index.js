@@ -1,196 +1,164 @@
-// openclaw/ced-bot/index.js
-import 'dotenv/config';
-import admin from 'firebase-admin';
-import { getFirestore } from 'firebase-admin/firestore';
-import { Bot } from 'grammy';
+import { Telegraf } from 'telegraf';
+import { config } from 'dotenv';
 import { routeMessage } from './router/router.js';
-import express from 'express';
 import https from 'https';
+import pdfParse from 'pdf-parse';
 
-// ============================================
-// 1. FIREBASE INITIALIZATION
-// ============================================
-let db;
-try {
-    if (!admin.apps.length) {
-        admin.initializeApp({
-            credential: admin.credential.applicationDefault(),
-            projectId: 'openclaw-pilot'
-        });
-    }
-    db = getFirestore();
-    console.log('🔥 Firebase initialized');
-} catch (error) {
-    console.error('❌ Firebase initialization error:', error.message);
-    process.exit(1);
-}
+config();
 
-// ============================================
-// 2. FIRESTORE UTILITIES
-// ============================================
-async function saveMessage(chatId, userMessage, aiResponse, provider, model) {
-    try {
-        const messageData = {
-            chatId: String(chatId),
-            userMessage: userMessage,
-            aiResponse: aiResponse,
-            provider: provider,
-            model: model,
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            createdAt: new Date().toISOString()
-        };
-        const docRef = await db.collection('messages').add(messageData);
-        console.log('✅ Message saved to Firestore:', docRef.id);
-        return docRef.id;
-    } catch (error) {
-        console.error('❌ Failed to save to Firestore:', error.message);
-        return null;
-    }
-}
+const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
-// ============================================
-// 3. IMAGE DOWNLOAD HELPER
-// ============================================
-async function downloadImageAsBase64(fileUrl) {
+// Helper: Download file from Telegram
+async function downloadFile(fileId) {
+  try {
+    const file = await bot.telegram.getFile(fileId);
+    const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+    
     return new Promise((resolve, reject) => {
+      https.get(fileUrl, (response) => {
         const chunks = [];
-        
-        https.get(fileUrl, (response) => {
-            // Check for successful response
-            if (response.statusCode !== 200) {
-                reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`));
-                return;
-            }
-            
-            response.on('data', (chunk) => {
-                chunks.push(chunk);
-                console.log(`📥 Downloaded ${chunks.length} chunks...`);
-            });
-            
-            response.on('end', () => {
-                const buffer = Buffer.concat(chunks);
-                console.log(`✅ Download complete: ${buffer.length} bytes`);
-                resolve(buffer.toString('base64'));
-            });
-            
-            response.on('error', (err) => {
-                console.error('❌ Response error:', err.message);
-                reject(err);
-            });
-        }).on('error', (err) => {
-            console.error('❌ Request error:', err.message);
-            reject(err);
-        });
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () => resolve(Buffer.concat(chunks)));
+        response.on('error', reject);
+      }).on('error', reject);
     });
+  } catch (error) {
+    console.error('❌ File download error:', error.message);
+    throw error;
+  }
 }
 
-// ============================================
-// 4. BOT LOGIC (TEXT & MEDIA)
-// ============================================
-const bot = new Bot(process.env.TELEGRAM_TOKEN);
-
+// Message handler with multimodal support
 bot.on('message', async (ctx) => {
-    const userId = String(ctx.from.id);
-    let userMessage = ctx.message.text || '';
-    let options = {};
-
-    // Check for Photos
-    if (ctx.message.photo) {
-        userMessage = ctx.message.caption || 'Analyze this image';
-        
-        console.log('🖼️ Image message detected');
-        
+  try {
+    const message = ctx.message;
+    const options = {};
+    
+    // Handle text caption or direct text
+    const userText = message.caption || message.text || '';
+    
+    // IMAGES
+    if (message.photo && message.photo.length > 0) {
+      console.log('📸 Image message detected');
+      const photo = message.photo[message.photo.length - 1];
+      
+      const imageBuffer = await downloadFile(photo.file_id);
+      console.log(`✅ Downloaded image: ${imageBuffer.length} bytes`);
+      
+      const base64Image = imageBuffer.toString('base64');
+      console.log(`✅ Base64 encoded: ${base64Image.length} characters`);
+      
+      options.hasImage = true;
+      options.imageData = base64Image;
+      options.imageMediaType = 'image/jpeg';
+      console.log('🖼️ Image data prepared for API');
+    }
+    
+    // AUDIO / VOICE
+    if (message.voice || message.audio) {
+      console.log('🎤 Audio message detected');
+      const audio = message.voice || message.audio;
+      
+      const audioBuffer = await downloadFile(audio.file_id);
+      console.log(`✅ Downloaded audio: ${audioBuffer.length} bytes`);
+      
+      const base64Audio = audioBuffer.toString('base64');
+      
+      options.hasAudio = true;
+      options.audioData = base64Audio;
+      options.audioMediaType = message.voice ? 'audio/ogg' : (audio.mime_type || 'audio/mpeg');
+      options.audioDuration = audio.duration;
+      console.log('🎵 Audio data prepared for API');
+    }
+    
+    // VIDEO
+    if (message.video || message.video_note) {
+      console.log('🎥 Video message detected');
+      const video = message.video || message.video_note;
+      
+      const videoBuffer = await downloadFile(video.file_id);
+      console.log(`✅ Downloaded video: ${videoBuffer.length} bytes`);
+      
+      const base64Video = videoBuffer.toString('base64');
+      
+      options.hasVideo = true;
+      options.videoData = base64Video;
+      options.videoMediaType = video.mime_type || 'video/mp4';
+      options.videoDuration = video.duration;
+      console.log('📹 Video data prepared for API');
+    }
+    
+    // DOCUMENTS (PDF, etc)
+    if (message.document) {
+      console.log('📄 Document detected');
+      const doc = message.document;
+      
+      const docBuffer = await downloadFile(doc.file_id);
+      console.log(`✅ Downloaded document: ${docBuffer.length} bytes`);
+      
+      // If PDF, extract text
+      if (doc.mime_type === 'application/pdf') {
         try {
-            // Get the largest photo
-            const photo = ctx.message.photo[ctx.message.photo.length - 1];
-            console.log(`📸 Photo file_id: ${photo.file_id}`);
-            
-            // Get file info from Telegram
-            const file = await ctx.api.getFile(photo.file_id);
-            console.log(`📁 File path: ${file.file_path}`);
-            
-            // Build download URL
-            const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_TOKEN}/${file.file_path}`;
-            console.log(`🔗 Download URL ready`);
-            
-            // Download and encode
-            const base64Image = await downloadImageAsBase64(fileUrl);
-            console.log(`✅ Base64 encoding complete: ${base64Image.length} chars`);
-
-            options = {
-                hasImage: true,
-                imageContext: 'Telegram image',
-                imageData: base64Image,
-                imageMediaType: 'image/jpeg'
-            };
-            
-            console.log('📸 Image processed for AI Vision');
-            console.log(`📦 Options object ready with imageData`);
-            
-        } catch (error) {
-            console.error('❌ Image download error:', error.message);
-            console.error('❌ Stack:', error.stack);
-            await ctx.reply('Sorry, I had trouble downloading that image. Please try again.');
-            return;
+          const pdfData = await pdfParse(docBuffer);
+          options.hasDocument = true;
+          options.documentText = pdfData.text;
+          options.documentName = doc.file_name;
+          options.documentPages = pdfData.numpages;
+          console.log(`📖 PDF text extracted: ${pdfData.text.length} characters, ${pdfData.numpages} pages`);
+        } catch (pdfError) {
+          console.error('⚠️ PDF parsing failed:', pdfError.message);
+          options.hasDocument = true;
+          options.documentText = '[PDF text extraction failed]';
+          options.documentName = doc.file_name;
         }
+      } else {
+        // For other documents, just note the file
+        options.hasDocument = true;
+        options.documentName = doc.file_name;
+        options.documentType = doc.mime_type;
+        console.log(`📎 Document noted: ${doc.file_name}`);
+      }
     }
-
-    // Process Message via Router
-    try {
-        console.log('📨 Incoming:', userMessage);
-        console.log('📝 Options:', JSON.stringify({
-            hasImage: options.hasImage || false,
-            hasImageData: !!options.imageData,
-            imageDataLength: options.imageData ? options.imageData.length : 0
-        }));
-        
-        const result = await routeMessage(userMessage, options);
-        
-        if (!result || !result.text) throw new Error('Empty response from AI');
-
-        await ctx.reply(result.text);
-        await saveMessage(userId, userMessage, result.text, result.provider, result.model);
-        
-    } catch (error) {
-        console.error('❌ Processing Error:', error.message);
-        await ctx.reply('Sorry, I encountered an error. Please try again.');
+    
+    // Build message for routing
+    let finalMessage = userText;
+    
+    // Add context hints for non-text content
+    if (!userText && options.hasImage) {
+      finalMessage = 'Analyze this image';
+    } else if (!userText && options.hasAudio) {
+      finalMessage = 'What is in this audio?';
+    } else if (!userText && options.hasVideo) {
+      finalMessage = 'What is in this video?';
+    } else if (!userText && options.hasDocument) {
+      finalMessage = `Analyze this document: ${options.documentName}`;
     }
+    
+    console.log(`💬 Routing message with options:`, {
+      hasImage: options.hasImage || false,
+      hasAudio: options.hasAudio || false,
+      hasVideo: options.hasVideo || false,
+      hasDocument: options.hasDocument || false,
+      textLength: finalMessage.length
+    });
+    
+    // Route to AI
+    const response = await routeMessage(finalMessage, options);
+    
+    // Send response
+    await ctx.reply(response.text, { parse_mode: 'Markdown' });
+    
+  } catch (error) {
+    console.error('❌ Message handling error:', error);
+    await ctx.reply('Sorry, something went wrong processing your message. Please try again.');
+  }
 });
 
-// ============================================
-// 5. CLOUD RUN ENGINE ROOM (EXPRESS)
-// ============================================
-const app = express();
-app.use(express.json());
+// Start bot
+bot.launch()
+  .then(() => console.log('✅ Ced bot started successfully'))
+  .catch(err => console.error('❌ Bot launch error:', err));
 
-const PORT = process.env.PORT || 8080;
-
-// Health check (Required for Cloud Run)
-app.get('/', (req, res) => {
-    res.status(200).send({ status: 'ok', message: 'Ced Bot Active in Sydney' });
-});
-
-// Telegram Webhook Listener
-app.post('/webhook', async (req, res) => {
-    try {
-        await bot.handleUpdate(req.body);
-        res.status(200).send({ ok: true });
-    } catch (error) {
-        console.error('❌ Webhook error:', error.message);
-        res.status(500).send({ ok: false });
-    }
-});
-
-// Initialize and Start
-async function startBot() {
-    try {
-        await bot.init();
-        app.listen(PORT, '0.0.0.0', () => {
-            console.log(`🚀 Ced Agent online on port ${PORT}`);
-        });
-    } catch (error) {
-        console.error('❌ Failed to start server:', error);
-    }
-}
-
-startBot();
+// Graceful shutdown
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
