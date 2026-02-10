@@ -1,6 +1,6 @@
 // ============================================
-// CED BOT - PRODUCTION VERSION 1.3
-// Full multimodal + size limits + fallback text
+// CED BOT - PRODUCTION VERSION 1.4
+// Multimodal + size limits + LAST MEDIA TRACKING
 // Last updated: 2026-02-10
 // ============================================
 
@@ -14,6 +14,11 @@ import { routeMessage } from './router/router.js';
 config();
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
+
+// ============================================
+// Simple in-memory store: last media per chat
+// ============================================
+const lastMedia = new Map(); // chatId → { type, buffer, mediaType, timestamp }
 
 // ============================================
 // Download file helper (with timeout & size limit)
@@ -67,88 +72,132 @@ async function downloadFile(fileId, maxSizeBytes = 20 * 1024 * 1024, timeoutMs =
 }
 
 // ============================================
-// Message handler with multimodal support
+// Message handler with multimodal support + last media memory
 // ============================================
 bot.on('message', async (ctx) => {
   try {
     const message = ctx.message;
+    const chatId = ctx.chat.id.toString();
     const options = {};
     let userText = message.caption || message.text || '';
 
-    // IMAGES
+    // ─────────────────────────────────────────────
+    // 1. Handle incoming media → store it as last media
+    // ─────────────────────────────────────────────
+    let mediaStored = false;
+
     if (message.photo && message.photo.length > 0) {
       const photo = message.photo[message.photo.length - 1];
-      const imageBuffer = await downloadFile(photo.file_id, 5 * 1024 * 1024); // 5 MB max
-      if (!imageBuffer || imageBuffer.length === 0) {
-        throw new Error('Empty image buffer');
+      const buffer = await downloadFile(photo.file_id, 5 * 1024 * 1024);
+      if (buffer && buffer.length > 0) {
+        lastMedia.set(chatId, {
+          type: 'image',
+          buffer,
+          mediaType: 'image/jpeg',
+          timestamp: Date.now()
+        });
+        mediaStored = true;
       }
-      options.hasImage = true;
-      options.imageData = imageBuffer.toString('base64');
-      options.imageMediaType = 'image/jpeg';
     }
 
-    // AUDIO / VOICE
-    if (message.voice || message.audio) {
+    else if (message.voice || message.audio) {
       const audio = message.voice || message.audio;
-      const audioBuffer = await downloadFile(audio.file_id, 8 * 1024 * 1024); // 8 MB max
-      if (!audioBuffer || audioBuffer.length === 0) {
-        throw new Error('Empty audio buffer');
+      const buffer = await downloadFile(audio.file_id, 8 * 1024 * 1024);
+      if (buffer && buffer.length > 0) {
+        lastMedia.set(chatId, {
+          type: 'audio',
+          buffer,
+          mediaType: message.voice ? 'audio/ogg' : 'audio/mpeg',
+          timestamp: Date.now()
+        });
+        mediaStored = true;
       }
-      options.hasAudio = true;
-      options.audioData = audioBuffer.toString('base64');
-      options.audioMediaType = message.voice ? 'audio/ogg' : 'audio/mpeg';
     }
 
-    // VIDEO
-    if (message.video) {
-      const videoBuffer = await downloadFile(message.video.file_id, 10 * 1024 * 1024); // 10 MB max
-      if (videoBuffer.length > 10 * 1024 * 1024) {
-        await ctx.reply('This video is too large (max 10 MB). Please try a shorter clip!');
-        return;
-      }
-      if (!videoBuffer || videoBuffer.length === 0) {
-        throw new Error('Empty video buffer');
-      }
-      options.hasVideo = true;
-      options.videoData = videoBuffer.toString('base64');
-      options.videoMediaType = message.video.mime_type || 'video/mp4';
-    }
-
-    // DOCUMENTS
-    if (message.document) {
-      const doc = message.document;
-      const docBuffer = await downloadFile(doc.file_id, 15 * 1024 * 1024); // 15 MB max
-
-      if (docBuffer.length > 15 * 1024 * 1024) {
-        await ctx.reply('This document is too large (max 15 MB).');
-        return;
-      }
-
-      if (!docBuffer || docBuffer.length === 0) {
-        throw new Error('Empty document buffer');
-      }
-
-      if (doc.mime_type === 'application/pdf') {
-        const pdfData = await pdfParse(docBuffer);
-        if (!pdfData.text || pdfData.text.trim().length === 0) {
-          throw new Error('PDF content empty or unreadable');
+    else if (message.video) {
+      const buffer = await downloadFile(message.video.file_id, 10 * 1024 * 1024);
+      if (buffer && buffer.length > 0) {
+        if (buffer.length > 10 * 1024 * 1024) {
+          await ctx.reply('This video is too large (max 10 MB). Please try a shorter clip!');
+          return;
         }
-        options.hasDocument = true;
-        options.documentText = pdfData.text;
-        options.documentType = 'pdf';
-      } else {
-        options.hasDocument = true;
-        options.documentData = docBuffer.toString('base64');
-        options.documentType = doc.mime_type;
+        lastMedia.set(chatId, {
+          type: 'video',
+          buffer,
+          mediaType: message.video.mime_type || 'video/mp4',
+          timestamp: Date.now()
+        });
+        mediaStored = true;
       }
     }
 
-    // Force fallback text if no caption but media present
-    if (!userText) {
-      if (options.hasImage) userText = 'Please analyze this image';
-      else if (options.hasVideo) userText = 'Please analyze this video';
-      else if (options.hasAudio) userText = 'Please transcribe and respond to this audio';
-      else if (options.hasDocument) userText = 'Please analyze this document';
+    else if (message.document) {
+      const doc = message.document;
+      const buffer = await downloadFile(doc.file_id, 15 * 1024 * 1024);
+      if (buffer && buffer.length > 0) {
+        if (buffer.length > 15 * 1024 * 1024) {
+          await ctx.reply('This document is too large (max 15 MB).');
+          return;
+        }
+
+        let docOptions = {};
+        if (doc.mime_type === 'application/pdf') {
+          const pdfData = await pdfParse(buffer);
+          if (pdfData.text && pdfData.text.trim().length > 0) {
+            docOptions = { text: pdfData.text, type: 'pdf' };
+          }
+        } else {
+          docOptions = { base64: buffer.toString('base64'), type: doc.mime_type };
+        }
+
+        lastMedia.set(chatId, {
+          type: 'document',
+          buffer,
+          mediaType: doc.mime_type,
+          documentOptions: docOptions,
+          timestamp: Date.now()
+        });
+        mediaStored = true;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 2. If no media in THIS message, but user asks something → try to use last media
+    // ─────────────────────────────────────────────
+    if (!mediaStored && (userText || ctx.message.reply_to_message)) {
+      const last = lastMedia.get(chatId);
+      if (last && (Date.now() - last.timestamp < 5 * 60 * 1000)) { // 5 min memory
+        if (last.type === 'image') {
+          options.hasImage = true;
+          options.imageData = last.buffer.toString('base64');
+          options.imageMediaType = last.mediaType;
+        } else if (last.type === 'video') {
+          options.hasVideo = true;
+          options.videoData = last.buffer.toString('base64');
+          options.videoMediaType = last.mediaType;
+        } else if (last.type === 'audio') {
+          options.hasAudio = true;
+          options.audioData = last.buffer.toString('base64');
+          options.audioMediaType = last.mediaType;
+        } else if (last.type === 'document') {
+          options.hasDocument = true;
+          if (last.documentOptions.text) {
+            options.documentText = last.documentOptions.text;
+            options.documentType = 'pdf';
+          } else {
+            options.documentData = last.buffer.toString('base64');
+            options.documentType = last.mediaType;
+          }
+        }
+      }
+    }
+
+    // Force fallback text if no text but we have media (new or remembered)
+    if ((!userText || userText.trim() === '') && (options.hasImage || options.hasVideo || options.hasAudio || options.hasDocument)) {
+      if (options.hasImage) userText = 'Please analyze this image.';
+      else if (options.hasVideo) userText = 'Please describe and analyze this video.';
+      else if (options.hasAudio) userText = 'Please transcribe this audio and respond.';
+      else if (options.hasDocument) userText = 'Please read and summarize this document.';
     }
 
     // Skip if nothing useful
@@ -166,7 +215,7 @@ bot.on('message', async (ctx) => {
     try {
       await ctx.reply('Sorry, something went wrong on my side. Try asking again!');
     } catch {
-      // Silent fail
+      // Silent
     }
   }
 });
