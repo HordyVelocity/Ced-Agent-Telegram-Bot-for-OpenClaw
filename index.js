@@ -51,14 +51,7 @@ bot.on('text', async (ctx) => {
     await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
-    // db.collection("messages").add({
-      chatId,
-      userId,
-      username,
-      message,
-      response,
-      timestamp: new Date()
-    });
+    // Firestore save disabled
   } catch (error) {
     console.error('❌ Error:', error);
     await ctx.reply('Sorry, something went wrong. Please try again.');
@@ -102,15 +95,7 @@ bot.on('photo', async (ctx) => {
     await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
-    // db.collection("messages").add({
-      chatId,
-      userId,
-      username,
-      message,
-      response,
-      hasImage: true,
-      timestamp: new Date()
-    });
+    // Firestore save disabled
   } catch (error) {
     console.error('❌ Photo error:', error);
     await ctx.reply('Sorry, I had trouble processing that image. Please try again.');
@@ -151,15 +136,7 @@ bot.on('video', async (ctx) => {
     await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
-    // db.collection("messages").add({
-      chatId,
-      userId,
-      username,
-      message,
-      response,
-      hasVideo: true,
-      timestamp: new Date()
-    });
+    // Firestore save disabled
   } catch (error) {
     console.error('❌ Video error:', error);
     await ctx.reply('Sorry, I had trouble processing that video. Please try again.');
@@ -200,15 +177,7 @@ bot.on(['audio', 'voice'], async (ctx) => {
     await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
-    // db.collection("messages").add({
-      chatId,
-      userId,
-      username,
-      message,
-      response,
-      hasAudio: true,
-      timestamp: new Date()
-    });
+    // Firestore save disabled
   } catch (error) {
     console.error('❌ Audio error:', error);
     await ctx.reply('Sorry, I had trouble processing that audio. Please try again.');
@@ -249,15 +218,7 @@ bot.on('document', async (ctx) => {
     await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
-    // db.collection("messages").add({
-      chatId,
-      userId,
-      username,
-      message,
-      response,
-      hasDocument: true,
-      timestamp: new Date()
-    });
+    // Firestore save disabled
   } catch (error) {
     console.error('❌ Document error:', error);
     await ctx.reply('Sorry, I had trouble processing that document. Please try again.');
