@@ -1,220 +1,200 @@
 // ============================================
-// CED BOT - PRODUCTION VERSION 1.1
-// Clean - No Console Statements
+// CED BOT - PRODUCTION VERSION 1.2
+// Full multimodal support + error handling
+// Last updated: 2026-02-10
 // ============================================
 
-import Anthropic from '@
-cat > ~/Documents/A-\ \(ClawdBot\)\ -\ OpenClaw\ Project/openclaw-installer/openclaw/ced-bot/index.js << 'ENDOFFILE'
-// ============================================
-// CED BOT - PRODUCTION VERSION 1.1
-// Clean - No Console Statements
-// ============================================
-
-import Anthropic from '@anthropic-ai/sdk';
-import Telegraf from 'telegraf';
-import fetch from 'node-fetch';
-import admin from 'firebase-admin';
-import * as pdfParse from 'pdf-parse';
+import { Telegraf } from 'telegraf';
+import { config } from 'dotenv';
+import https from 'https';
+import express from 'express';
+import pdfParse from 'pdf-parse';
 import { routeMessage } from './router/router.js';
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+config();
 
-if (!ANTHROPIC_API_KEY || !TELEGRAM_BOT_TOKEN) {
-  process.exit(1);
-}
+const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.applicationDefault(),
-  });
-}
-const db = admin.firestore();
-
-const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
-
-async function downloadFile(fileId) {
-  const fileUrl = await bot.telegram.getFileLink(fileId);
-  const response = await fetch(fileUrl.href);
-  const buffer = await response.buffer();
-  return buffer;
-}
-
-async function saveToFirestore(chatId, role, content) {
+// ============================================
+// Download file helper (with timeout & size limit)
+// ============================================
+async function downloadFile(fileId, maxSizeBytes = 20 * 1024 * 1024, timeoutMs = 30000) {
   try {
-    await db.collection('conversations').add({
-      chatId: chatId.toString(),
-      role,
-      content,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    const file = await bot.telegram.getFile(fileId);
+    const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        req.destroy();
+        reject(new Error('Download timeout exceeded'));
+      }, timeoutMs);
+
+      const req = https.get(fileUrl, (res) => {
+        if (res.statusCode !== 200) {
+          clearTimeout(timeout);
+          reject(new Error(`Download failed: ${res.statusCode}`));
+          return;
+        }
+
+        const contentLength = parseInt(res.headers['content-length'] || '0', 10);
+        if (contentLength > maxSizeBytes) {
+          clearTimeout(timeout);
+          res.destroy();
+          reject(new Error(`File too large: ${contentLength} bytes (max ${maxSizeBytes})`));
+          return;
+        }
+
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => {
+          clearTimeout(timeout);
+          resolve(Buffer.concat(chunks));
+        });
+        res.on('error', (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        });
+      });
+
+      req.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
     });
-  } catch (error) {
-    // Silent failure - logging optional
+  } catch (err) {
+    throw new Error(`Download failed: ${err.message}`);
   }
 }
 
+// ============================================
+// Message handler with multimodal support
+// ============================================
 bot.on('message', async (ctx) => {
-  const message = ctx.message;
-  const chatId = message.chat.id;
-  const userName = message.from.first_name || message.from.username || 'User';
-
-  const options = {
-    hasImage: false,
-    hasAudio: false,
-    hasVideo: false,
-    hasDocument: false,
-    imageData: null,
-    imageMediaType: null,
-    audioData: null,
-    videoData: null,
-    videoMediaType: null,
-    documentData: null,
-    documentType: null,
-  };
-
-  let userMessage = message.text || '';
-
   try {
-    // IMAGE HANDLING
+    const message = ctx.message;
+    const options = {};
+    let userText = message.caption || message.text || '';
+
+    // IMAGES
     if (message.photo && message.photo.length > 0) {
-      try {
-        const photo = message.photo[message.photo.length - 1];
-        const imageBuffer = await downloadFile(photo.file_id);
-        
-        if (!imageBuffer || imageBuffer.length === 0) {
-          throw new Error('Failed to download image');
-        }
-        
-        const base64Image = imageBuffer.toString('base64');
-        
-        options.hasImage = true;
-        options.imageData = base64Image;
-        options.imageMediaType = 'image/jpeg';
-        
-        userMessage = message.caption || 'Please analyze this image';
-      } catch (imageError) {
-        await ctx.reply('⚠️ Failed to process image. Please try again.');
-        return;
+      const photo = message.photo[message.photo.length - 1];
+      const imageBuffer = await downloadFile(photo.file_id);
+      if (!imageBuffer || imageBuffer.length === 0) {
+        throw new Error('Empty image buffer');
       }
+      options.hasImage = true;
+      options.imageData = imageBuffer.toString('base64');
+      options.imageMediaType = 'image/jpeg';
     }
 
-    // AUDIO HANDLING
-    if (message.voice) {
-      try {
-        const voiceBuffer = await downloadFile(message.voice.file_id);
-        
-        if (!voiceBuffer || voiceBuffer.length === 0) {
-          throw new Error('Failed to download voice message');
-        }
-        
-        const base64Audio = voiceBuffer.toString('base64');
-        
-        options.hasAudio = true;
-        options.audioData = base64Audio;
-        
-        userMessage = 'Please transcribe and respond to this voice message';
-      } catch (audioError) {
-        await ctx.reply('⚠️ Failed to process voice message. Please try again.');
-        return;
+    // AUDIO / VOICE
+    if (message.voice || message.audio) {
+      const audio = message.voice || message.audio;
+      const audioBuffer = await downloadFile(audio.file_id);
+      if (!audioBuffer || audioBuffer.length === 0) {
+        throw new Error('Empty audio buffer');
       }
+      options.hasAudio = true;
+      options.audioData = audioBuffer.toString('base64');
+      options.audioMediaType = message.voice ? 'audio/ogg' : 'audio/mpeg';
     }
 
-    // VIDEO HANDLING
+    // VIDEO
     if (message.video) {
-      try {
-        const videoBuffer = await downloadFile(message.video.file_id);
-        
-        if (!videoBuffer || videoBuffer.length === 0) {
-          throw new Error('Failed to download video');
-        }
-        
-        const base64Video = videoBuffer.toString('base64');
-        
-        options.hasVideo = true;
-        options.videoData = base64Video;
-        options.videoMediaType = message.video.mime_type || 'video/mp4';
-        
-        userMessage = message.caption || 'Please analyze this video';
-      } catch (videoError) {
-        await ctx.reply('⚠️ Failed to process video. Please try again.');
-        return;
+      const videoBuffer = await downloadFile(message.video.file_id);
+      if (!videoBuffer || videoBuffer.length === 0) {
+        throw new Error('Empty video buffer');
       }
+      options.hasVideo = true;
+      options.videoData = videoBuffer.toString('base64');
+      options.videoMediaType = message.video.mime_type || 'video/mp4';
     }
 
-    // DOCUMENT HANDLING
-    if (message.document && message.document.mime_type !== 'application/pdf') {
-      try {
-        const docBuffer = await downloadFile(message.document.file_id);
-        
-        if (!docBuffer || docBuffer.length === 0) {
-          throw new Error('Failed to download document');
+    // DOCUMENTS
+    if (message.document) {
+      const doc = message.document;
+      const docBuffer = await downloadFile(doc.file_id);
+
+      if (!docBuffer || docBuffer.length === 0) {
+        throw new Error('Empty document buffer');
+      }
+
+      if (doc.mime_type === 'application/pdf') {
+        // PDF → extract text
+        const pdfData = await pdfParse(docBuffer);
+        if (!pdfData.text || pdfData.text.trim().length === 0) {
+          throw new Error('PDF content empty or unreadable');
         }
-        
-        const base64Doc = docBuffer.toString('base64');
-        
         options.hasDocument = true;
-        options.documentData = base64Doc;
-        options.documentType = message.document.mime_type;
-        
-        userMessage = message.caption || 'Please analyze this document';
-      } catch (docError) {
-        await ctx.reply('⚠️ Failed to process document. Please try again.');
-        return;
+        options.documentText = pdfData.text;
+        options.documentType = 'pdf';
+      } else {
+        // Other documents → base64
+        options.hasDocument = true;
+        options.documentData = docBuffer.toString('base64');
+        options.documentType = doc.mime_type;
       }
     }
 
-    if (!userMessage && !options.hasImage && !options.hasAudio && !options.hasVideo && !options.hasDocument) {
+    // Force fallback text if no caption/text but media present
+    if (!userText) {
+      if (options.hasImage) userText = 'Please analyze this image';
+      else if (options.hasVideo) userText = 'Please analyze this video';
+      else if (options.hasAudio) userText = 'Please transcribe and respond to this audio';
+      else if (options.hasDocument) userText = 'Please analyze this document';
+    }
+
+    // Skip if nothing useful
+    if (!userText && !Object.values(options).some(v => !!v)) {
       return;
     }
 
-    await saveToFirestore(chatId, 'user', userMessage);
+    // Route to AI logic
+    const response = await routeMessage(userText, options);
 
-    const response = await routeMessage(userMessage, options);
-    
-    await ctx.reply(response.text);
-
-    await saveToFirestore(chatId, 'assistant', response.text);
+    await ctx.reply(response.text || 'Got it!');
 
   } catch (error) {
     try {
-      await ctx.reply('⚠️ Sorry, I encountered an error. Please try again.');
-    } catch (replyError) {
-      // Silent failure
+      await ctx.reply('Sorry, something went wrong on my side. Try asking again!');
+    } catch {
+      // Silent
     }
   }
 });
 
-import express from 'express';
+// ============================================
+// EXPRESS WEBHOOK SERVER FOR CLOUD RUN
+// ============================================
 const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
 const WEBHOOK_PATH = '/webhook';
 
+// Health check (required by Cloud Run)
 app.get('/', (req, res) => {
-  res.status(200).send({ status: 'ok', message: 'Ced Bot is running' });
+  res.status(200).json({ status: 'ok', message: 'Ced Bot is running' });
 });
 
+// Telegram webhook
 app.post(WEBHOOK_PATH, async (req, res) => {
   try {
-    const update = req.body;
-    
-    await bot.handleUpdate(update);
-    
-    res.status(200).send({ ok: true });
-  } catch (error) {
-    res.status(500).send({ ok: false, error: error.message });
+    await bot.handleUpdate(req.body);
+    res.status(200).json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
+// Start server
 async function startBot() {
   try {
     await bot.telegram.getMe();
-    
     app.listen(PORT, '0.0.0.0', () => {
-      // Server running
+      // Server running silently
     });
-  } catch (error) {
+  } catch (err) {
     process.exit(1);
   }
 }
