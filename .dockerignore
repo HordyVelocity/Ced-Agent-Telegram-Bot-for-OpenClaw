@@ -1,0 +1,6 @@
+node_modules
+*.backup.*
+index.js.backup*
+.git
+.vscode
+.env
