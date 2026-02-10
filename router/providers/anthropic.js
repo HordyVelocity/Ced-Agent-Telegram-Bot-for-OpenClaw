@@ -45,6 +45,18 @@ export async function callAnthropic(message, options = {}) {
       console.log('🖼️ Image added to API request');
     }
     
+    if (options.hasDocument && options.documentData) {
+      messageContent.push({
+        type: 'document',
+        source: {
+          type: 'base64',
+          media_type: options.documentMediaType || 'application/pdf',
+          data: options.documentData
+        }
+      });
+      console.log('📄 Document added to API request');
+    }
+    
     messageContent.push({
       type: 'text',
       text: message || 'Please analyze this content'
