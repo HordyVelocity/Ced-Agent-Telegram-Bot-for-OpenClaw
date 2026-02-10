@@ -51,7 +51,7 @@ bot.on('text', async (ctx) => {
     await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
-    await db.collection('messages').add({
+    // db.collection("messages").add({
       chatId,
       userId,
       username,
@@ -102,7 +102,7 @@ bot.on('photo', async (ctx) => {
     await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
-    await db.collection('messages').add({
+    // db.collection("messages").add({
       chatId,
       userId,
       username,
@@ -151,7 +151,7 @@ bot.on('video', async (ctx) => {
     await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
-    await db.collection('messages').add({
+    // db.collection("messages").add({
       chatId,
       userId,
       username,
@@ -200,7 +200,7 @@ bot.on(['audio', 'voice'], async (ctx) => {
     await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
-    await db.collection('messages').add({
+    // db.collection("messages").add({
       chatId,
       userId,
       username,
@@ -249,7 +249,7 @@ bot.on('document', async (ctx) => {
     await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
-    await db.collection('messages').add({
+    // db.collection("messages").add({
       chatId,
       userId,
       username,
