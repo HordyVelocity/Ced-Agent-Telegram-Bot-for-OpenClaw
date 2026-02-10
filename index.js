@@ -48,7 +48,7 @@ bot.on('text', async (ctx) => {
 
   try {
     const response = await routeMessage(message);
-    await ctx.reply(response);
+    await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
     await db.collection('messages').add({
@@ -99,7 +99,7 @@ bot.on('photo', async (ctx) => {
       imageMediaType: 'image/jpeg'
     });
 
-    await ctx.reply(response);
+    await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
     await db.collection('messages').add({
@@ -148,7 +148,7 @@ bot.on('video', async (ctx) => {
       videoMediaType: 'video/mp4'
     });
 
-    await ctx.reply(response);
+    await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
     await db.collection('messages').add({
@@ -197,7 +197,7 @@ bot.on(['audio', 'voice'], async (ctx) => {
       audioMediaType: ctx.message.voice ? 'audio/ogg' : 'audio/mpeg'
     });
 
-    await ctx.reply(response);
+    await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
     await db.collection('messages').add({
@@ -246,7 +246,7 @@ bot.on('document', async (ctx) => {
       documentMediaType: document.mime_type || 'application/pdf'
     });
 
-    await ctx.reply(response);
+    await ctx.reply(response.text || response.error || "No response");
 
     // Save to Firestore
     await db.collection('messages').add({
