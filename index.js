@@ -3,7 +3,7 @@ import express from 'express';
 import { Telegraf } from 'telegraf';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { route } from './router/router.js';
+import { routeMessage } from './router/router.js';
 import https from 'https';
 
 // Initialize Firebase
@@ -47,7 +47,7 @@ bot.on('text', async (ctx) => {
   console.log('📩 Message:', { message, username });
 
   try {
-    const response = await route(message);
+    const response = await routeMessage(message);
     await ctx.reply(response);
 
     // Save to Firestore
@@ -93,7 +93,7 @@ bot.on('photo', async (ctx) => {
     });
 
     // Route with image
-    const response = await route(message || 'Please analyze this image', {
+    const response = await routeMessage(message || 'Please analyze this image', {
       hasImage: true,
       imageData: imageBuffer.toString('base64'),
       imageMediaType: 'image/jpeg'
@@ -142,7 +142,7 @@ bot.on('video', async (ctx) => {
     });
 
     // Route with video
-    const response = await route(message || 'Please analyze this video', {
+    const response = await routeMessage(message || 'Please analyze this video', {
       hasVideo: true,
       videoData: videoBuffer.toString('base64'),
       videoMediaType: 'video/mp4'
@@ -191,7 +191,7 @@ bot.on(['audio', 'voice'], async (ctx) => {
     });
 
     // Route with audio
-    const response = await route(message || 'Please transcribe this audio', {
+    const response = await routeMessage(message || 'Please transcribe this audio', {
       hasAudio: true,
       audioData: audioBuffer.toString('base64'),
       audioMediaType: ctx.message.voice ? 'audio/ogg' : 'audio/mpeg'
@@ -240,7 +240,7 @@ bot.on('document', async (ctx) => {
     });
 
     // Route with document
-    const response = await route(message || 'Please analyze this document', {
+    const response = await routeMessage(message || 'Please analyze this document', {
       hasDocument: true,
       documentData: docBuffer.toString('base64'),
       documentMediaType: document.mime_type || 'application/pdf'
