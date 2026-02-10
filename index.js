@@ -1,6 +1,6 @@
 // ============================================
-// CED BOT - PRODUCTION VERSION 1.2
-// Full multimodal support + error handling
+// CED BOT - PRODUCTION VERSION 1.3
+// Full multimodal + size limits + fallback text
 // Last updated: 2026-02-10
 // ============================================
 
@@ -78,7 +78,7 @@ bot.on('message', async (ctx) => {
     // IMAGES
     if (message.photo && message.photo.length > 0) {
       const photo = message.photo[message.photo.length - 1];
-      const imageBuffer = await downloadFile(photo.file_id);
+      const imageBuffer = await downloadFile(photo.file_id, 5 * 1024 * 1024); // 5 MB max
       if (!imageBuffer || imageBuffer.length === 0) {
         throw new Error('Empty image buffer');
       }
@@ -90,7 +90,7 @@ bot.on('message', async (ctx) => {
     // AUDIO / VOICE
     if (message.voice || message.audio) {
       const audio = message.voice || message.audio;
-      const audioBuffer = await downloadFile(audio.file_id);
+      const audioBuffer = await downloadFile(audio.file_id, 8 * 1024 * 1024); // 8 MB max
       if (!audioBuffer || audioBuffer.length === 0) {
         throw new Error('Empty audio buffer');
       }
@@ -101,7 +101,11 @@ bot.on('message', async (ctx) => {
 
     // VIDEO
     if (message.video) {
-      const videoBuffer = await downloadFile(message.video.file_id);
+      const videoBuffer = await downloadFile(message.video.file_id, 10 * 1024 * 1024); // 10 MB max
+      if (videoBuffer.length > 10 * 1024 * 1024) {
+        await ctx.reply('This video is too large (max 10 MB). Please try a shorter clip!');
+        return;
+      }
       if (!videoBuffer || videoBuffer.length === 0) {
         throw new Error('Empty video buffer');
       }
@@ -113,14 +117,18 @@ bot.on('message', async (ctx) => {
     // DOCUMENTS
     if (message.document) {
       const doc = message.document;
-      const docBuffer = await downloadFile(doc.file_id);
+      const docBuffer = await downloadFile(doc.file_id, 15 * 1024 * 1024); // 15 MB max
+
+      if (docBuffer.length > 15 * 1024 * 1024) {
+        await ctx.reply('This document is too large (max 15 MB).');
+        return;
+      }
 
       if (!docBuffer || docBuffer.length === 0) {
         throw new Error('Empty document buffer');
       }
 
       if (doc.mime_type === 'application/pdf') {
-        // PDF → extract text
         const pdfData = await pdfParse(docBuffer);
         if (!pdfData.text || pdfData.text.trim().length === 0) {
           throw new Error('PDF content empty or unreadable');
@@ -129,14 +137,13 @@ bot.on('message', async (ctx) => {
         options.documentText = pdfData.text;
         options.documentType = 'pdf';
       } else {
-        // Other documents → base64
         options.hasDocument = true;
         options.documentData = docBuffer.toString('base64');
         options.documentType = doc.mime_type;
       }
     }
 
-    // Force fallback text if no caption/text but media present
+    // Force fallback text if no caption but media present
     if (!userText) {
       if (options.hasImage) userText = 'Please analyze this image';
       else if (options.hasVideo) userText = 'Please analyze this video';
@@ -155,10 +162,11 @@ bot.on('message', async (ctx) => {
     await ctx.reply(response.text || 'Got it!');
 
   } catch (error) {
+    console.error('Message handler error:', error);
     try {
       await ctx.reply('Sorry, something went wrong on my side. Try asking again!');
     } catch {
-      // Silent
+      // Silent fail
     }
   }
 });
@@ -172,7 +180,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 8080;
 const WEBHOOK_PATH = '/webhook';
 
-// Health check (required by Cloud Run)
+// Health check
 app.get('/', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Ced Bot is running' });
 });
@@ -195,6 +203,7 @@ async function startBot() {
       // Server running silently
     });
   } catch (err) {
+    console.error('Startup failed:', err);
     process.exit(1);
   }
 }
