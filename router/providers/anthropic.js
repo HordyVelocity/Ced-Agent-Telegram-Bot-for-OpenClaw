@@ -47,7 +47,7 @@ export async function callAnthropic(message, options = {}) {
     
     messageContent.push({
       type: 'text',
-      text: message
+      text: message || 'Please analyze this content'
     });
     
     const response = await client.messages.create({
