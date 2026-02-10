@@ -57,6 +57,30 @@ export async function callAnthropic(message, options = {}) {
       console.log('📄 Document added to API request');
     }
     
+    if (options.hasVideo && options.videoData) {
+      messageContent.push({
+        type: 'video',
+        source: {
+          type: 'base64',
+          media_type: options.videoMediaType || 'video/mp4',
+          data: options.videoData
+        }
+      });
+      console.log('🎬 Video added to API request');
+    }
+    
+    if (options.hasAudio && options.audioData) {
+      messageContent.push({
+        type: 'audio',
+        source: {
+          type: 'base64',
+          media_type: options.audioMediaType || 'audio/ogg',
+          data: options.audioData
+        }
+      });
+      console.log('🎤 Audio added to API request');
+    }
+    
     messageContent.push({
       type: 'text',
       text: message || 'Please analyze this content'
