@@ -1,3 +1,4 @@
+console.log("BOOT: index.js loaded");
 import express from 'express';
 import { Telegraf } from 'telegraf';
 import { initializeApp } from 'firebase-admin/app';
@@ -267,7 +268,9 @@ bot.on('document', async (ctx) => {
 async function startBot() {
   try {
     // CRITICAL: Start listening on port FIRST before any Telegram API calls
+    console.log("BOOT: about to listen on port", process.env.PORT);
     app.listen(PORT, '0.0.0.0', () => {
+      console.log("BOOT: listening on", PORT);
       console.log(`🚀 Ced Agent online on port ${PORT}`);
     });
     
