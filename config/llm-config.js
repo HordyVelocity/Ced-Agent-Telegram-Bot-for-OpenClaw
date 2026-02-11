@@ -28,10 +28,10 @@ export const LLM_CONFIG = {
     categories: {
       CREATIVE: 'anthropic',      // Creative writing, storytelling
       ANALYTICAL: 'anthropic',    // Analysis, reasoning, complex thinking
-      CODE: 'anthropic',              // Code generation, debugging
-      FACTUAL: 'anthropic',           // Factual queries, quick answers
+      CODE: 'openai',              // Code generation, debugging
+      FACTUAL: 'openai',           // Factual queries, quick answers
       CONVERSATIONAL: 'anthropic', // General chat, dialogue
-      TECHNICAL: 'anthropic'          // Technical documentation, APIs
+      TECHNICAL: 'openai'          // Technical documentation, APIs
     },
 
     // Default provider if classification is uncertain
