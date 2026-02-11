@@ -3,24 +3,25 @@ import { callAnthropic } from './providers/anthropic.js';
 import { callOpenAI } from './providers/openai.js';
 
 export async function routeMessage(message, options = {}) {
-    const { saveToDb = false, userId = 'test-user' } = options;
     const startTime = Date.now();
     
     console.log('\n🚀 ===== ROUTING MESSAGE =====');
     console.log(`📨 Message: ${message}`);
-    console.log(`🎬 Options:`, options);
 
     try {
         const classification = classifyTask(message);
-        console.log(`📋 Classified as: ${classification.type}`);
-        console.log(`🎯 Provider: ${classification.provider}`);
+        console.log(`📋 Category: ${classification.category}`);
+        console.log(`🎯 Provider: ${classification.provider} | Model: ${classification.model}`);
+
+        // Pass the specific model in options
+        options.modelOverride = classification.model;
 
         let response;
         if (classification.provider === 'anthropic') {
-            console.log('🟣 Calling Anthropic with options');
+            console.log(`🟣 Calling Anthropic → ${classification.model}`);
             response = await callAnthropic(message, options);
         } else {
-            console.log('🔵 Calling OpenAI with options');
+            console.log(`🔵 Calling OpenAI → ${classification.model}`);
             response = await callOpenAI(message, options);
         }
 
@@ -34,7 +35,7 @@ export async function routeMessage(message, options = {}) {
             content: response.text,
             provider: classification.provider,
             model: response.model,
-            classification: classification.type,
+            classification: classification.category,
             responseTime: Date.now() - startTime
         };
     } catch (error) {

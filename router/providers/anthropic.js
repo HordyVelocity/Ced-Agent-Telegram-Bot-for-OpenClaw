@@ -87,7 +87,7 @@ export async function callAnthropic(message, options = {}) {
     });
     
     const response = await client.messages.create({
-      model: LLM_CONFIG.anthropic.model,
+      model: options.modelOverride || LLM_CONFIG.anthropic.model,
       max_tokens: 1024,
       temperature: 0.7,
       system: systemPrompt,
