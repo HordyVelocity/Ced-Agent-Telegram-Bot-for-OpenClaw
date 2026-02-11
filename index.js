@@ -105,7 +105,7 @@ bot.on('photo', async (ctx) => {
 });
 
 // Handle videos
-bot.on('video', async (ctx) => {
+bot.on(['video', 'video_note'], async (ctx) => {
   const message = ctx.message.caption || '';
   const chatId = ctx.chat.id;
   const userId = ctx.from.id;
