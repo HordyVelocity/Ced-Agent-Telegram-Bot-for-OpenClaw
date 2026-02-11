@@ -114,7 +114,7 @@ bot.on(['video', 'video_note'], async (ctx) => {
   console.log('🎥 Video received:', { message, username });
 
   try {
-    const video = ctx.message.video;
+    const video = ctx.message.video || ctx.message.video_note;
     const file = await ctx.telegram.getFile(video.file_id);
     const fileUrl = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`;
     
