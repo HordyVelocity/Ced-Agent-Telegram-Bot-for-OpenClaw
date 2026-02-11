@@ -3,6 +3,8 @@
  */
 
 export const LLM_CONFIG = {
+  gemini: { model: "gemini-2.0-flash", maxTokens: 4096, temperature: 0.7 },
+
   openai: { model: 'gpt-4o', maxTokens: 4096, temperature: 0.7 },
   anthropic: { model: 'claude-sonnet-4-20250514', maxTokens: 4096, temperature: 0.7 },
 
