@@ -128,17 +128,26 @@ bot.on(['video', 'video_note'], async (ctx) => {
       });
     });
 
-    // Route with video
-    const history = await getHistory(chatId);
-    const response = await routeMessage(message || 'Please analyze this video', {
-      history,
+    // Step 1: Gemini analyzes the video (transcription + visual)
+    const analysis = await routeMessage('Describe what you see and transcribe any speech in this video. Return the transcription and a brief visual description.', {
       hasVideo: true,
       videoData: videoBuffer.toString('base64'),
       videoMediaType: 'video/mp4'
     });
 
+    const videoSummary = analysis.text || '';
+    console.log('Video analysis: ' + videoSummary.substring(0, 100));
+
+    // Step 2: Pass analysis to Ced (Anthropic) for natural response
+    const history = await getHistory(chatId);
+    const userContext = message
+      ? message + ' [Video message analysis: ' + videoSummary + ']'
+      : '[User sent a video message. Analysis: ' + videoSummary + ']';
+
+    const response = await routeMessage(userContext, { history });
+
     await ctx.reply(response.text || response.error || "No response");
-    saveUserMessage(chatId, message, "[User sent a VIDEO]").catch(e => console.error("Save err:", e.message));
+    saveUserMessage(chatId, userContext, "[User sent a VIDEO]").catch(e => console.error("Save err:", e.message));
     saveAssistantMessage(chatId, response.text, response.provider, response.model).catch(e => console.error("Save err:", e.message));
   } catch (error) {
     console.error('❌ Video error:', error);
@@ -170,17 +179,26 @@ bot.on(['audio', 'voice'], async (ctx) => {
       });
     });
 
-    // Route with audio
-    const history = await getHistory(chatId);
-    const response = await routeMessage(message || 'Please transcribe this audio', {
-      history,
+    // Step 1: Gemini transcribes the audio
+    const transcription = await routeMessage('Transcribe this audio accurately. Return ONLY the transcription, nothing else.', {
       hasAudio: true,
       audioData: audioBuffer.toString('base64'),
       audioMediaType: ctx.message.voice ? 'audio/ogg' : 'audio/mpeg'
     });
 
+    const transcript = transcription.text || '';
+    console.log('Transcription: ' + transcript.substring(0, 100));
+
+    // Step 2: Pass transcription to Ced (Anthropic) for natural response
+    const history = await getHistory(chatId);
+    const userContext = message
+      ? message + ' [Voice message transcription: ' + transcript + ']'
+      : '[Voice message from user. They said: ' + transcript + ']';
+
+    const response = await routeMessage(userContext, { history });
+
     await ctx.reply(response.text || response.error || "No response");
-    saveUserMessage(chatId, message, "[User sent a VOICE MESSAGE]").catch(e => console.error("Save err:", e.message));
+    saveUserMessage(chatId, userContext, "[User sent a VOICE MESSAGE]").catch(e => console.error("Save err:", e.message));
     saveAssistantMessage(chatId, response.text, response.provider, response.model).catch(e => console.error("Save err:", e.message));
   } catch (error) {
     console.error('❌ Audio error:', error);
