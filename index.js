@@ -86,17 +86,26 @@ bot.on('photo', async (ctx) => {
       });
     });
 
-    // Route with image
-    const history = await getHistory(chatId);
-    const response = await routeMessage(message || 'Please analyze this image', {
-      history,
+    // Step 1: Gemini describes the image
+    const description = await routeMessage('Describe this image in detail. What do you see? If there is text, read it. Be factual and concise.', {
       hasImage: true,
       imageData: imageBuffer.toString('base64'),
       imageMediaType: 'image/jpeg'
     });
 
+    const imageDesc = description.text || '';
+    console.log('Image description: ' + imageDesc.substring(0, 100));
+
+    // Step 2: Pass description to Ced (Anthropic) for natural response
+    const history = await getHistory(chatId);
+    const userContext = message
+      ? message + ' [Image description: ' + imageDesc + ']'
+      : '[User sent an image. Description: ' + imageDesc + ']';
+
+    const response = await routeMessage(userContext, { history });
+
     await ctx.reply(response.text || response.error || "No response");
-    saveUserMessage(chatId, message, "[User sent an IMAGE]").catch(e => console.error("Save err:", e.message));
+    saveUserMessage(chatId, userContext, "[User sent an IMAGE]").catch(e => console.error("Save err:", e.message));
     saveAssistantMessage(chatId, response.text, response.provider, response.model).catch(e => console.error("Save err:", e.message));
   } catch (error) {
     console.error('❌ Photo error:', error);
@@ -129,7 +138,7 @@ bot.on(['video', 'video_note'], async (ctx) => {
     });
 
     // Step 1: Gemini analyzes the video (transcription + visual)
-    const analysis = await routeMessage('Describe what you see and transcribe any speech in this video. Return the transcription and a brief visual description.', {
+    const analysis = await routeMessage('Transcribe any speech in this video accurately. If there is no speech, briefly describe what is shown. Return ONLY the transcription or description, nothing else.', {
       hasVideo: true,
       videoData: videoBuffer.toString('base64'),
       videoMediaType: 'video/mp4'
