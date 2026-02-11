@@ -43,9 +43,30 @@ export async function callGemini(message, options = {}) {
 
     parts.push({ text: message || "Please analyze this content" });
 
-    console.log("🔷 Calling Gemini 2.0 Flash with " + parts.length + " parts");
+    let result;
 
-    const result = await model.generateContent(parts);
+    // Use startChat with history for multi-turn context
+    if (options.history && options.history.length > 0) {
+      const chatHistory = [];
+      for (const msg of options.history) {
+        const text = msg.mediaSummary
+          ? msg.mediaSummary + '\n' + msg.text
+          : msg.text;
+        if (text && text.trim()) {
+          chatHistory.push({
+            role: msg.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: text }]
+          });
+        }
+      }
+      console.log("📚 Added " + chatHistory.length + " history messages to Gemini");
+
+      const chat = model.startChat({ history: chatHistory });
+      result = await chat.sendMessage(parts);
+    } else {
+      result = await model.generateContent(parts);
+    }
+
     const response = result.response;
     const text = response.text();
 

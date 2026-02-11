@@ -4,6 +4,7 @@ import { Telegraf } from 'telegraf';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { routeMessage } from './router/router.js';
+import { getHistory, saveUserMessage, saveAssistantMessage } from './utils/conversation-history.js';
 import https from 'https';
 
 // Initialize Firebase
@@ -47,11 +48,11 @@ bot.on('text', async (ctx) => {
   console.log('📩 Message:', { message, username });
 
   try {
-    const response = await routeMessage(message);
+    const history = await getHistory(chatId);
+    const response = await routeMessage(message, { history });
     await ctx.reply(response.text || response.error || "No response");
-
-    // Save to Firestore
-    // Firestore save disabled
+    saveUserMessage(chatId, message, null).catch(e => console.error("Save err:", e.message));
+    saveAssistantMessage(chatId, response.text, response.provider, response.model).catch(e => console.error("Save err:", e.message));
   } catch (error) {
     console.error('❌ Error:', error);
     await ctx.reply('Sorry, something went wrong. Please try again.');
@@ -86,16 +87,17 @@ bot.on('photo', async (ctx) => {
     });
 
     // Route with image
+    const history = await getHistory(chatId);
     const response = await routeMessage(message || 'Please analyze this image', {
+      history,
       hasImage: true,
       imageData: imageBuffer.toString('base64'),
       imageMediaType: 'image/jpeg'
     });
 
     await ctx.reply(response.text || response.error || "No response");
-
-    // Save to Firestore
-    // Firestore save disabled
+    saveUserMessage(chatId, message, "[User sent an IMAGE]").catch(e => console.error("Save err:", e.message));
+    saveAssistantMessage(chatId, response.text, response.provider, response.model).catch(e => console.error("Save err:", e.message));
   } catch (error) {
     console.error('❌ Photo error:', error);
     await ctx.reply('Sorry, I had trouble processing that image. Please try again.');
@@ -127,16 +129,17 @@ bot.on('video', async (ctx) => {
     });
 
     // Route with video
+    const history = await getHistory(chatId);
     const response = await routeMessage(message || 'Please analyze this video', {
+      history,
       hasVideo: true,
       videoData: videoBuffer.toString('base64'),
       videoMediaType: 'video/mp4'
     });
 
     await ctx.reply(response.text || response.error || "No response");
-
-    // Save to Firestore
-    // Firestore save disabled
+    saveUserMessage(chatId, message, "[User sent a VIDEO]").catch(e => console.error("Save err:", e.message));
+    saveAssistantMessage(chatId, response.text, response.provider, response.model).catch(e => console.error("Save err:", e.message));
   } catch (error) {
     console.error('❌ Video error:', error);
     await ctx.reply('Sorry, I had trouble processing that video. Please try again.');
@@ -168,16 +171,17 @@ bot.on(['audio', 'voice'], async (ctx) => {
     });
 
     // Route with audio
+    const history = await getHistory(chatId);
     const response = await routeMessage(message || 'Please transcribe this audio', {
+      history,
       hasAudio: true,
       audioData: audioBuffer.toString('base64'),
       audioMediaType: ctx.message.voice ? 'audio/ogg' : 'audio/mpeg'
     });
 
     await ctx.reply(response.text || response.error || "No response");
-
-    // Save to Firestore
-    // Firestore save disabled
+    saveUserMessage(chatId, message, "[User sent a VOICE MESSAGE]").catch(e => console.error("Save err:", e.message));
+    saveAssistantMessage(chatId, response.text, response.provider, response.model).catch(e => console.error("Save err:", e.message));
   } catch (error) {
     console.error('❌ Audio error:', error);
     await ctx.reply('Sorry, I had trouble processing that audio. Please try again.');
@@ -209,16 +213,17 @@ bot.on('document', async (ctx) => {
     });
 
     // Route with document
+    const history = await getHistory(chatId);
     const response = await routeMessage(message || 'Please analyze this document', {
+      history,
       hasDocument: true,
       documentData: docBuffer.toString('base64'),
       documentMediaType: document.mime_type || 'application/pdf'
     });
 
     await ctx.reply(response.text || response.error || "No response");
-
-    // Save to Firestore
-    // Firestore save disabled
+    saveUserMessage(chatId, message, "[User sent a DOCUMENT]").catch(e => console.error("Save err:", e.message));
+    saveAssistantMessage(chatId, response.text, response.provider, response.model).catch(e => console.error("Save err:", e.message));
   } catch (error) {
     console.error('❌ Document error:', error);
     await ctx.reply('Sorry, I had trouble processing that document. Please try again.');
