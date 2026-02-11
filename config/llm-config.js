@@ -12,7 +12,7 @@ export const LLM_CONFIG = {
       ANALYTICAL:     { provider: 'anthropic', model: 'claude-opus-4-20250514' },
       CODE:           { provider: 'openai',    model: 'gpt-4o' },
       FACTUAL:        { provider: 'openai',    model: 'gpt-4o-mini' },
-      CONVERSATIONAL: { provider: 'anthropic', model: 'claude-haiku-4-5-20241022' },
+      CONVERSATIONAL: { provider: 'anthropic', model: 'claude-3-5-haiku-20241022' },
       TECHNICAL:      { provider: 'openai',    model: 'gpt-4o' }
     },
     default: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' }
