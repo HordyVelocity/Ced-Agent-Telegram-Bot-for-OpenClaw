@@ -4,25 +4,43 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-export async function callOpenAI(message) {
+export async function callOpenAI(message, options = {}) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error('OPENAI_API_KEY is missing in environment');
   }
 
   try {
+    const content = [];
+
+    // Add image if present
+    if (options.hasImage && options.imageData) {
+      content.push({
+        type: 'image_url',
+        image_url: {
+          url: `data:${options.imageMediaType || 'image/jpeg'};base64,${options.imageData}`
+        }
+      });
+      console.log('🖼️ Image added to OpenAI request');
+    }
+
+    // Add text
+    content.push({
+      type: 'text',
+      text: message || 'Please analyze this content'
+    });
+
     const response = await client.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4o",
       max_tokens: 1024,
       temperature: 0.7,
       messages: [
         {
           role: 'user',
-          content: message
+          content: content
         }
       ]
     });
 
-    // FIX: Extract text from OpenAI's response format
     const responseText = response.choices[0]?.message?.content;
 
     if (!responseText || typeof responseText !== 'string' || responseText.trim() === '') {
@@ -33,7 +51,7 @@ export async function callOpenAI(message) {
 
     return {
       text: responseText,
-      model: response.model || "gpt-4"
+      model: response.model || "gpt-4o"
     };
 
   } catch (error) {
