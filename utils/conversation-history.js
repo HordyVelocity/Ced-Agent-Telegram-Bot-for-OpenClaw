@@ -1,78 +1,72 @@
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore } from "firebase-admin/firestore";
 
-const db = getFirestore();
-const MAX_HISTORY = 10;
+let db = null;
+function getDb() {
+  if (!db) db = getFirestore();
+  return db;
+}
 
-/**
- * Fetch recent conversation history for a chat
- * Returns array of { role, text, mediaSummary } in chronological order
- */
-export async function getHistory(chatId, limit = MAX_HISTORY) {
+export async function getHistory(chatId, limit = 10) {
   try {
-    const snapshot = await db
-      .collection('conversations')
+    const snap = await getDb()
+      .collection("conversations")
       .doc(String(chatId))
-      .collection('messages')
-      .orderBy('timestamp', 'desc')
+      .collection("messages")
+      .orderBy("timestamp", "desc")
       .limit(limit * 2)
       .get();
 
-    if (snapshot.empty) {
-      console.log('📚 No history for chat ' + chatId);
+    if (snap.empty) {
+      console.log("No conversation history for chat", chatId);
       return [];
     }
 
     const messages = [];
-    snapshot.forEach(doc => messages.push(doc.data()));
-    messages.reverse();
+    snap.docs.reverse().forEach(doc => {
+      const d = doc.data();
+      const text = d.mediaSummary ? (d.mediaSummary + " " + (d.text || "")).trim() : (d.text || "");
+      if (text) messages.push({ role: d.role, text });
+    });
 
-    console.log('📚 Loaded ' + messages.length + ' history messages for chat ' + chatId);
+    console.log("Loaded " + messages.length + " history messages for chat " + chatId);
     return messages;
   } catch (error) {
-    console.error('❌ History fetch error:', error.message);
+    console.error("History fetch error:", error.message);
     return [];
   }
 }
 
-/**
- * Save a user message to history
- * mediaSummary examples: "[User sent a VIDEO]", "[User sent an IMAGE]", null for text
- */
 export async function saveUserMessage(chatId, text, mediaSummary = null) {
   try {
-    await db
-      .collection('conversations')
+    await getDb()
+      .collection("conversations")
       .doc(String(chatId))
-      .collection('messages')
+      .collection("messages")
       .add({
-        role: 'user',
-        text: (text || '').substring(0, 2000),
+        role: "user",
+        text: (text || "").substring(0, 2000),
         mediaSummary: mediaSummary || null,
-        timestamp: FieldValue.serverTimestamp()
+        timestamp: new Date()
       });
   } catch (error) {
-    console.error('❌ History save (user) error:', error.message);
+    console.error("Save user msg error:", error.message);
   }
 }
 
-/**
- * Save an assistant response to history
- */
-export async function saveAssistantMessage(chatId, text, provider = null, model = null) {
+export async function saveAssistantMessage(chatId, text, provider, model) {
   try {
-    await db
-      .collection('conversations')
+    await getDb()
+      .collection("conversations")
       .doc(String(chatId))
-      .collection('messages')
+      .collection("messages")
       .add({
-        role: 'assistant',
-        text: (text || '').substring(0, 2000),
-        mediaSummary: null,
+        role: "assistant",
+        text: (text || "").substring(0, 2000),
         provider: provider || null,
         model: model || null,
-        timestamp: FieldValue.serverTimestamp()
+        timestamp: new Date()
       });
   } catch (error) {
-    console.error('❌ History save (assistant) error:', error.message);
+    console.error("Save assistant msg error:", error.message);
   }
 }
