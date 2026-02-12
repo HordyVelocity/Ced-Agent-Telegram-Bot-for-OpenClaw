@@ -28,7 +28,7 @@ function isSessionExpired(convoData) {
   const last = convoData.lastActivityAt.toDate();
   const now = new Date();
   const diffMinutes = (now - last) / 1000 / 60;
-  return diffMinutes > 30;
+  return diffMinutes > 1440;
 }
 
 export async function getHistory(chatId, limit = 10) {
